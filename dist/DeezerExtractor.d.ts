@@ -14,6 +14,7 @@ interface DeezerOptions {
 export default class DeezerExtractor extends BaseExtractor<DeezerOptions> {
     static identifier: string;
     private _stream;
+    protocols: string[];
     client: SoundCloud;
     private deezerRegex;
     activate(): Promise<void>;

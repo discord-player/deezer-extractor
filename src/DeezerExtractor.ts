@@ -24,6 +24,8 @@ interface DeezerRegex {
 export default class DeezerExtractor extends BaseExtractor<DeezerOptions> {
     public static identifier: string = "com.discord-player.deezerextractor" as const
     private _stream = stream
+    protocols = ["deezer", "dzsearch"]
+
     client = new SoundCloud({
         clientId: this.options.soundcloud?.clientId,
         oauthToken: this.options.soundcloud?.oauthToken,
