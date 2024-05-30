@@ -41,3 +41,25 @@ player.extractors.register(DeezerExtractor)
 *note: be sure to register it before loading the default extractors to make sure any conflicts with discord-player's default attachment extractor is resolved!*
 
 That's it! See the magic happen as you bot is now able to play from Deezer URLs
+
+# Options
+
+DP Deezer accepts the following options.
+```ts
+interface DeezerOptions {
+    forceEngine?: EngineType;
+    createStream?: () => Promise<string|Readable>;
+    beforeCreateStream?: () => Promise<unknown>|unknown;
+}
+```
+One thing to keep in mind is, while using the two functions, if you want to access track data, you must you `useTrack()` function exported by the library. For example ...
+
+```ts
+player.extractors.register(DeezerExtractor, {
+    createStream: () => {
+        const track = useTrack()
+
+        return getStreamSomehow(track)
+    }
+})
+```
