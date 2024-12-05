@@ -21,7 +21,7 @@ await player.extractors.register(DeezerExtractor, {})
 
 # Extracting Streams
 
-As Deezer sends DMCA to repositories containing the hard-coded decryption keys, they are not provided. You can find these keys on the code of related projects (deezer downloaders)
+As Deezer sends DMCA to repositories containing the hard-coded decryption key, it is not provided. You can find this key in the code of related projects (deezer downloaders) and your client-side JavaScript code.
 
 ```ts
 import { DeezerExtractor } from "discord-player-deezer"
