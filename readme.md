@@ -1,65 +1,43 @@
-# Discord Player Deezer Extractor
+# Discord Player Deezer
 
-Discord Player Deezer Extractor. An extractor made for discord-player for **Deezer** support. Deezer extractor works by either making a request to the Deezer API or extracting metadata from the Deezer site. Because we cannot get streams from deezer itself, the extractor uses the extracted data to stream from youtube!
+Discord Player Deezer is a Deezer platform plugin for discord-player
 
-## Installing the extractor
+# Installation
 
 ```bash
-npm install discord-player-deezer
-# or
-yarn add discord-player-deezer
+$ npm install discord-player-deezer
 ```
 
-## Loading the extractor
-
-### CJS
-```js
-const DeezerExtractor = require("discord-player-deezer").default // or const { default: DeezerExtractor } = require("discord-player-deezer")
-const player = getMainPlayerSomehow()
-
-player.extractors.register(DeezerExtractor)
-```
-
-### ESM
-```js
-import { default as DeezerExtractor } from "discord-player-deezer"
-
-const player = getMainPlayerSomehow()
-
-player.extractors.register(DeezerExtractor)
-```
-
-### Typescript
-```ts
-import DeezerExtractor from "discord-player-deezer"
-
-const player = getMainPlayerSomehow()
-
-player.extractors.register(DeezerExtractor)
-```
-
-*note: be sure to register it before loading the default extractors to make sure any conflicts with discord-player's default attachment extractor is resolved!*
-
-That's it! See the magic happen as you bot is now able to play from Deezer URLs
-
-# Options
-
-DP Deezer accepts the following options.
-```ts
-interface DeezerOptions {
-    forceEngine?: EngineType;
-    createStream?: () => Promise<string|Readable>;
-    beforeCreateStream?: () => Promise<unknown>|unknown;
-}
-```
-One thing to keep in mind is, while using the two functions, if you want to access track data, you must you `useTrack()` function exported by the library. For example ...
+# Register the extractor
 
 ```ts
-player.extractors.register(DeezerExtractor, {
-    createStream: () => {
-        const track = useTrack()
+import { DeezerExtractor } from "discord-player-deezer"
+import { Player } from "discord-player"
 
-        return getStreamSomehow(track)
-    }
+const player = new Player(...)
+
+await player.extractors.register(DeezerExtractor, {})
+```
+
+# Extracting Streams
+
+As Deezer sends DMCA to repositories containing the hard-coded decryption keys, they are not provided. You can find these keys on the code of related projects (deezer downloaders)
+
+```ts
+import { DeezerExtractor } from "discord-player-deezer"
+import { Player } from "discord-player"
+
+const player = new Player(...)
+
+await player.extractors.register(DeezerExtractor, {
+    decryptionKey: "master-decryption-key"
 })
+```
+
+# Important information
+
+As Node has migrated from openssl for decryption, we must use the `--openssl-legacy-provider` flag when starting our application with stream extraction
+
+```bash
+$ node --openssl-legacy-provider yourfile.js
 ```
