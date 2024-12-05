@@ -1,70 +1,64 @@
-import { BaseExtractor, ExtractorInfo, ExtractorSearchContext, Playlist, SearchQueryType, Track } from "discord-player"
-import { Engine, Util } from "./utils/util"
-import { Util as DPUtil } from "discord-player";
-import { Readable } from "stream";
-import { AsyncLocalStorage } from "node:async_hooks"
-import { getData, Track as DeezerTrack, Playlist as DeezerPlaylist } from "@mithron/deezer-music-metadata";
+import { BaseExtractor, ExtractorSearchContext, ExtractorStreamable, Track, Playlist, Util as DPUtil, ExtractorInfo } from "discord-player"
+import { Playlist as DeezerPlaylist, Track as DeezerTrack, getData } from "@mithron/deezer-music-metadata";
+import { getCrypto, streamTrack, validate } from "./utils/util";
 
-export enum EngineType {
-    YTStream = "yt-stream",
-    DisTubeYTDL = "@distube/ytdl-core",
-    YTDL = "ytdl-core",
-    YoutubeEXT = "youtube-ext",
-    PlayDL = "play-dl"
+/**
+ * -------------------------------NOTICE-------------------------------------
+ * STREAMING CODE IS MAINLY TAKEN FROM https://github.com/PerformanC/NodeLink
+ * WHICH HAS THE "BSD 2-Clause "Simplified" License"
+ * 
+ * PLEASE SHOW THE ORIGINAL AUTHOR SUPPORT BY STARING HIS GITHUB REPO
+ * --------------------------------------------------------------------------
+ */
+
+export type DeezerExtractorOptions = {
+    decryptionKey?: string; // needed for decrypting deezer songs
+    createStream?: (track: Track, ext: DeezerExtractor) => Promise<ExtractorStreamable>
 }
 
-export interface DeezerOptions {
-    forceEngine?: EngineType;
-    createStream?: () => Promise<string|Readable>;
-    beforeCreateStream?: () => Promise<unknown>|unknown;
+export type DeezerUserInfo = {
+    cookie: string;
+    licenseToken: string;
+    csrfToken: string;
+    mediaUrl: string;
 }
 
-const ERR_NO_YT_LIB = new Error("Cannot find a youtube library. Please install one of " + Object.values(EngineType).join(", "))
+export class DeezerExtractor extends BaseExtractor<DeezerExtractorOptions> {
+    static identifier: string = "com.retrouser955.discord-player.deezr-ext"
+    userInfo!: DeezerUserInfo
 
-const context = new AsyncLocalStorage<Track>()
+    async activate(): Promise<void> {
+        if(!this.options.decryptionKey) process.emitWarning("Decryption Key missing! This is needed for extracting streams.")
+        else {
+            // extract deezer username
+            // dynamically load crypto because some might not want streaming
+            const crypto = await getCrypto()
+            const randomToken = crypto.randomBytes(16).toString("hex")
+            const deezerUsrDataUrl = `https://www.deezer.com/ajax/gw-light.php?method=deezer.getUserData&input=3&api_version=1.0&api_token=${randomToken}`
 
-export function useTrack(): Track {
-    const store = context.getStore()
-    
-    if(!store) throw new Error("INVALID INVOKATION")
+            const usrDataRes = await fetch(deezerUsrDataUrl)
+            const cookie = usrDataRes.headers.get("set-cookie")!
+            this.userInfo.cookie = cookie
+            const usrData = await usrDataRes.json()
 
-    return store
-}
+            const licenseToken = usrData.results.USER.OPTIONS.license_token
+            if(typeof licenseToken !== "string") throw new Error("Unable to get licenseToken")
+            this.userInfo.licenseToken = licenseToken
 
-export class DeezerExtractor extends BaseExtractor<DeezerOptions> {
-    engine!: Engine
+            const csrfToken = usrData.results.checkForm
+            if(typeof csrfToken !== "string") throw new Error("Unable to get csrf token which is required for decryption")
 
-    public static identifier: string = "app.vercel.retrouser955.deezerextractor";
-
-    public async activate(): Promise<void> {
-        this.debug("Getting the engine for Deezer extractor")
-        const validEngine = await Util.findYoutubeEngine(this.options.forceEngine)
-
-        if(!validEngine) throw ERR_NO_YT_LIB
-
-        this.engine = validEngine
-    }
-    
-    async validate(query: string, _type?: SearchQueryType | null | undefined): Promise<boolean> {
-        return Util.validateDeezerURL(query)
-    }
-
-    async handle(query: string, handleContext: ExtractorSearchContext): Promise<ExtractorInfo> {
-        const metadata = await getData(query)
-
-        if(metadata?.type === "song") return this.getReturnData([this.buildTrack(metadata, handleContext)], null)
-        if(metadata?.type === "playlist" || metadata?.type === "album") {
-            const playlist = this.buildPlaylistData(metadata, handleContext)
-
-            return this.getReturnData(playlist.tracks, playlist)
+            this.userInfo.mediaUrl = usrData.results.URL_MEDIA || "https://media.deezer.com"
         }
+    }
 
-        throw new Error("Unable to get data from Deezer")
+    async validate(query: string): Promise<boolean> {
+        return validate(query)
     }
 
     buildPlaylistData(data: DeezerPlaylist, handleContext: ExtractorSearchContext) {
         const raw: string[] = data.url.split("/")
-        const identifier: string = raw[raw.length - 1]
+        const identifier: string = raw[raw.length - 1].split("?")[0]
 
         return new Playlist(this.context.player, {
             title: data.name,
@@ -74,7 +68,6 @@ export class DeezerExtractor extends BaseExtractor<DeezerOptions> {
                 url: data.artist.url
             },
             type: data.type,
-            rawPlaylist: data,
             tracks: data.tracks.map((v) => this.buildTrack(v, handleContext)),
             description: "",
             source: "arbitrary",
@@ -82,18 +75,23 @@ export class DeezerExtractor extends BaseExtractor<DeezerOptions> {
             url: data.url
         })
     }
+    
+    async handle(query: string, context: ExtractorSearchContext): Promise<ExtractorInfo> {
+        const metadata = await getData(query)
 
-    getReturnData(tracks: Track[], playlist: Playlist|null) {
-        return {
-            playlist,
-            tracks
+        if(metadata?.type === "song") return this.createResponse(null, [this.buildTrack(metadata, context)])
+        if(metadata?.type === "playlist" || metadata?.type === "album") {
+            const playlist = this.buildPlaylistData(metadata, context)
+
+            return this.createResponse(playlist, playlist.tracks)
         }
+
+        throw new Error("Unable to get data from Deezer")
     }
 
     buildTrack(track: DeezerTrack, handleContext: ExtractorSearchContext) {
         return new Track(this.context.player, {
             title: track.name,
-            raw: track,
             author: track.author.map((v) => v.name).join(", "),
             url: track.url,
             source: "arbitrary",
@@ -103,17 +101,7 @@ export class DeezerExtractor extends BaseExtractor<DeezerOptions> {
         })
     }
 
-    async stream(info: Track<unknown>): Promise<string | Readable> {
-        if(this.options.beforeCreateStream && typeof this.options.beforeCreateStream === "function") {
-            context.run(info, this.options.beforeCreateStream)
-        }
-
-        if(this.options.createStream && typeof this.options.createStream === 'function') {
-            const stream = await context.run(info, this.options.createStream)
-            
-            return stream
-        }
-
-        return await this.engine.stream(info)
+    stream(info: Track): Promise<ExtractorStreamable> {
+        return streamTrack(info, this)
     }
 }

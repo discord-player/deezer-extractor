@@ -1,164 +1,144 @@
-import { Track } from "discord-player"
-import { EngineType } from "../DeezerExtractor"
-import { YouTube } from "youtube-sr"
+import { Track } from "discord-player";
+import type { DeezerExtractor } from "../DeezerExtractor";
+import { Readable, PassThrough } from 'stream'
+import type { BinaryLike, CipherGCMTypes, CipherKey, Decipher } from "crypto";
 
-export interface Engine {
-    name: EngineType;
-    getEngine: () => Promise<unknown>;
-    stream: (track: Track) => Promise<string>;
+const IV = Buffer.from(Array.from({ length: 8 }, (_, x) => x))
+
+let rawCrypto: typeof import("crypto")
+
+export async function getCrypto() {
+    if (!rawCrypto) {
+        rawCrypto = await import("crypto")
+        return rawCrypto
+    }
+
+    return rawCrypto
 }
 
-const deezerRegex = {
+export async function streamTrack(track: Track, ext: DeezerExtractor) {
+    const trackIdWithUrlParams = track.url.split("/").at(-1)
+    if (!trackIdWithUrlParams || !validate(track.url)) throw new Error("INVALID TRACK") // not a deezer track
+
+    const decryptionKey = ext.options.decryptionKey
+    if (!decryptionKey) throw new Error("MISSING DEEZER DECRYPTION KEY") // cant decrypt due to missing key
+
+    const crypto = await getCrypto()
+    const trackId = trackIdWithUrlParams.split("?")[0]
+
+    const trackHash = crypto.createHash("md5").update(trackId, "ascii").digest("hex")
+    const trackKey = Buffer.alloc(16)
+
+    for (let iter = 0; iter < 16; iter++)
+        /* tslint:disable-next-line no-bitwise */
+        trackKey.writeInt8(trackHash[iter].charCodeAt(0) ^ trackHash[iter + 16].charCodeAt(0) ^ decryptionKey[iter].charCodeAt(0), iter)
+
+    const trackInfoRes = await fetch(`https://www.deezer.com/ajax/gw-light.php?method=song.getListData&input=3&api_version=1.0&api_token=${ext.userInfo.csrfToken}`, {
+        method: "POST",
+        headers: {
+            Cookie: ext.userInfo.cookie,
+            'User-Agent': "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:120.0) Gecko/20100101 Firefox/120.0",
+            'DNT': '1'
+        },
+        body: JSON.stringify({
+            sng_ids: [trackId]
+        })
+    })
+
+    const trackInfo = await trackInfoRes.json()
+
+    // no streaming data found
+    if (Array.isArray(trackInfo.error) && (trackInfo.error as unknown[]).length !== 0) throw new Error("Unable to extract track\n" + JSON.stringify(trackInfo.error))
+    if (typeof trackInfo.error === "object" && Object.keys(trackInfo.error).length !== 0) throw new Error("Unable to extract track\n" + JSON.stringify(trackInfo.error))
+
+    const info = trackInfo.data[0]
+
+    const streamInfoRes = await fetch(`${ext.userInfo.mediaUrl}/v1/get-url`, {
+        method: "POST",
+        body: JSON.stringify({
+            license_token: ext.userInfo.licenseToken,
+            media: [{
+                type: 'FULL',
+                formats: [{
+                    cipher: 'BF_CBC_STRIPE',
+                    format: 'FLAC'
+                }, {
+                    cipher: 'BF_CBC_STRIPE',
+                    format: 'MP3_256'
+                }, {
+                    cipher: 'BF_CBC_STRIPE',
+                    format: 'MP3_128'
+                }, {
+                    cipher: 'BF_CBC_STRIPE',
+                    format: 'MP3_MISC'
+                }]
+            }],
+            track_tokens: [info.TRACK_TOKEN]
+        })
+    })
+
+    const streamInfo = await streamInfoRes.json()
+
+    const trackMediaUrl = streamInfo.data[0].media[0].sources[0].url
+
+    const trackReq = await fetch(trackMediaUrl)
+    // @ts-ignore
+    const readable = Readable.fromWeb(trackReq.body)
+    let buffer = Buffer.alloc(0)
+    let i = 0
+
+    const bufferSize = 2048 // 2mb
+
+    const passThrough = new PassThrough()
+
+    readable.on("readable", () => {
+        let chunk = null;
+        while (true) {
+            chunk = readable.read(bufferSize)
+
+            if (!chunk) {
+                if (readable.readableLength) {
+                    chunk = readable.read(readable.readableLength)
+                    buffer = Buffer.concat([buffer, chunk])
+                }
+                break;
+            } else {
+                buffer = Buffer.concat([buffer, chunk])
+            }
+
+            while (buffer.length >= bufferSize) {
+                const bufferSized = buffer.subarray(0, bufferSize)
+
+                if (i % 3 === 0) {
+                    const decipher = crypto.createDecipheriv(
+                        'bf-cbc' as unknown as CipherGCMTypes,
+                        trackKey as unknown as CipherKey,
+                        IV as unknown as BinaryLike
+                    ).setAutoPadding(false) as unknown as Decipher
+
+                    // @ts-ignore
+                    passThrough.write(decipher.update(bufferSized as unknown as ArrayBufferView))
+                    passThrough.write(decipher.final())
+                } else {
+                    passThrough.write(bufferSized)
+                }
+
+                i++
+
+                buffer = buffer.subarray(bufferSize)
+            }
+        }
+    })
+
+    return passThrough
+}
+
+export const deezerRegex = {
     track: /(^https:)\/\/(www\.)?deezer.com\/([a-zA-Z]+\/)?track\/[0-9]+/,
     playlistNalbums: /(^https:)\/\/(www\.)?deezer.com\/[a-zA-Z]+\/(playlist|album)\/[0-9]+(\?)?(.*)/,
     share: /(^https:)\/\/deezer\.page\.link\/[A-Za-z0-9]+/
-};
+} as const;
 
-export class Util {
-    static async defaultSearch(track: Track) {
-        const search = await YouTube.searchOne(`${track.title} - ${track.author} audio`)
-
-        return search.url
-    }
-
-    static async findYoutubeEngine(overwrite?: string) {
-        const engines: Engine[] = [
-            {
-                name: EngineType.YTStream,
-                getEngine: async () => {
-                    const lb = await import("yt-stream")
-                    return lb.default
-                },
-                stream: async (track: Track) => {
-                    const ytStream = await import("yt-stream")
-
-                    const search = await ytStream.search(`${track.author} - ${track.title} audio`)
-
-                    const stream = await ytStream.stream(search[0].url, {
-                        quality: 'high',
-                        type: 'audio',
-                        highWaterMark: 1048576 * 32,
-                        download: false
-                    })
-
-                    return stream.url
-                }
-            },
-            {
-                name: EngineType.DisTubeYTDL,
-                getEngine: async () => {
-                    const lb = await import('@distube/ytdl')
-                    return lb
-                },
-                stream: async (track: Track) => {
-                    const ytdl = await import("@distube/ytdl")
-
-                    const search = await this.defaultSearch(track)
-
-                    const stream = await ytdl.getInfo(search)
-
-                    const audioFormat = stream.formats.filter((v) => {
-                        return v.hasAudio
-                    }).sort((a, b) => Number(b.audioBitrate) - Number(a.audioBitrate) ?? Number(a.bitrate) - Number(b.bitrate))[0]
-
-                    if(!audioFormat.url) throw new Error("Unable to find stream url for this song")
-
-                    return audioFormat.url
-                }
-            },
-            {
-                name: EngineType.YTDL,
-                getEngine: async () => {
-                    const lb = await import('ytdl-core')
-                    return lb
-                },
-                stream: async (track: Track) => {
-                    const ytdl = await import("ytdl-core")
-
-                    const search = await this.defaultSearch(track)
-
-                    const stream = await ytdl.getInfo(search)
-
-                    const audioFormat = stream.formats.filter((v) => {
-                        return v.hasAudio
-                    }).sort((a, b) => Number(b.audioBitrate) - Number(a.audioBitrate) ?? Number(a.bitrate) - Number(b.bitrate))[0]
-
-                    if(!audioFormat.url) throw new Error("Unable to find stream url for this song")
-
-                    return audioFormat.url
-                }
-            },
-            {
-                name: EngineType.YoutubeEXT,
-                getEngine: async () => {
-                    const lb = await import("youtube-ext")
-                    return lb
-                },
-                stream: async (track: Track) => {
-                    const ytEXT = await import("youtube-ext")
-
-                    const search = await ytEXT.search(`${track.author} - ${track.title} audio`, {
-                        filterType: "video"
-                    })
-
-                    const info = await ytEXT.videoInfo(search.videos[0].url)
-
-                    const formats = (await ytEXT.getFormats(info.stream)).filter((v) => {
-                        if(!v.url) return false
-                        return typeof v.bitrate === "number"
-                    })
-
-                    if(!formats[0].url) throw new Error("Unable to find stream url using youtube-ext")
-
-                    return formats[0].url
-                }
-            },
-            {
-                name: EngineType.PlayDL,
-                async getEngine() {
-                    const lb = await import("play-dl")
-                    return lb
-                },
-                async stream(track) {
-                    const play = await import("play-dl")
-                    
-                    const info = await play.video_info((await play.search(`${track.author} - ${track.title} audio`))[0].url)
-
-                    const fmt = info.format.filter((val) => {
-                        if(!val.url) return false
-
-                        return typeof val.bitrate === "number"
-                    }).sort((a, b) => Number(b.bitrate) - Number(a.bitrate))[0]
-
-                    if(!fmt.url) throw new Error("Unable to find stream url")
-                    
-                    return fmt.url
-                },
-            }
-        ]
-
-        if(overwrite) {
-            const engine = engines.filter((eng) => eng.name === overwrite)[0]
-
-            if(!engine) throw new Error("Not a valid youtube engine. Please install one of " + Object.values(EngineType).join(", "))
-
-            return engine
-        }
-
-        let i = 0
-
-        for(; i < engines.length; i++) {
-            const engine = engines[i]
-
-            if(await engine.getEngine()) break;
-        }
-
-        const validEngine = engines[i]
-
-        return validEngine
-    }
-
-    static validateDeezerURL(str: string) {
-        return deezerRegex.share.test(str) ?? deezerRegex.playlistNalbums.test(str) ?? deezerRegex.track.test(str)
-    }
+export function validate(query: string) {
+    return deezerRegex.track.test(query) ?? deezerRegex.playlistNalbums.test(query) ?? deezerRegex.share.test(query)
 }
