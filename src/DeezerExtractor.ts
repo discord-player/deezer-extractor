@@ -1,6 +1,6 @@
 import { BaseExtractor, ExtractorSearchContext, ExtractorStreamable, Track, Playlist, Util as DPUtil, ExtractorInfo } from "discord-player"
 import { Playlist as DeezerPlaylist, Track as DeezerTrack, getData } from "@mithron/deezer-music-metadata";
-import { getCrypto, streamTrack, validate } from "./utils/util";
+import { buildTrackFromSearch, getCrypto, searchOneTrack, streamTrack, validate } from "./utils/util";
 
 /**
  * -------------------------------NOTICE-------------------------------------
@@ -89,7 +89,7 @@ export class DeezerExtractor extends BaseExtractor<DeezerExtractorOptions> {
         throw new Error("Unable to get data from Deezer")
     }
 
-    buildTrack(track: DeezerTrack, handleContext: ExtractorSearchContext) {
+    buildTrack(track: DeezerTrack, { requestedBy }: ExtractorSearchContext) {
         return new Track(this.context.player, {
             title: track.name,
             author: track.author.map((v) => v.name).join(", "),
@@ -97,8 +97,18 @@ export class DeezerExtractor extends BaseExtractor<DeezerExtractorOptions> {
             source: "arbitrary",
             thumbnail: track.thumbnail[0].url,
             duration: DPUtil.buildTimeCode(DPUtil.parseMS(track.duration)),
-            requestedBy: handleContext.requestedBy
+            requestedBy
         })
+    }
+
+    async bridge(track: Track): Promise<ExtractorStreamable | null> {
+        const deezerTrack = await searchOneTrack(`${track.author} ${track.source === "youtube" ? track.cleanTitle : track.title}`)
+        if(!deezerTrack || !deezerTrack?.data[0]) return null
+        const dpTrack = buildTrackFromSearch(deezerTrack, this.context.player, track.requestedBy)
+
+        const stream = this.stream(dpTrack[0])
+
+        return stream
     }
 
     stream(info: Track): Promise<ExtractorStreamable> {

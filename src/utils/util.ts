@@ -1,4 +1,4 @@
-import { Track } from "discord-player";
+import { type Player, Track, Util } from "discord-player";
 import type { DeezerExtractor } from "../DeezerExtractor";
 import { Readable, PassThrough } from 'stream'
 import type { BinaryLike, CipherGCMTypes, CipherKey, Decipher } from "crypto";
@@ -16,15 +16,72 @@ export async function getCrypto() {
     return rawCrypto
 }
 
-export async function streamTrack(track: Track, ext: DeezerExtractor) {
-    const trackIdWithUrlParams = track.url.split("/").at(-1)
-    if (!trackIdWithUrlParams || !validate(track.url)) throw new Error("INVALID TRACK") // not a deezer track
+const DeezerAPIRoutes = {
+    searchTrack(query: string, limit?: number) {
+        const url = `https://api.deezer.com/search/track?q=${encodeURIComponent(query)}&${limit ? `limit=${limit}` : ""}`
 
+        return url
+    }
+} as const
+
+export type ArrayOrObject<T> = T | T[] 
+
+export interface DeezerSearchTrackResponse {
+    data: {
+        link: string,
+        title: string,
+        album: {
+            cover_xl?: string,
+            cover_medium?: string,
+            cover_small?: string,
+            cover?: string
+        },
+        artist: {
+            name: string
+        },
+        duration: number, // in seconds
+        type: "track"
+    }[]
+}
+
+export function buildTrackFromSearch(track: DeezerSearchTrackResponse, player: Player, requestedBy?: Track['requestedBy']) {
+    return track.data.map((v) => new Track(player, {
+        source: "arbitrary",
+        duration: Util.buildTimeCode(Util.parseMS(v.duration * 1000)),
+        author: Array.isArray(v.artist) ? v.artist.map(a => a.name).join(", ") : v.artist.name,
+        url: v.link,
+        title: v.title,
+        thumbnail: v.album.cover_xl || v.album.cover_medium || v.album.cover || v.album.cover_small || "https://play-lh.googleusercontent.com/xtIOV8iPeAY4GrldTDo3CbLAEpbea2DqnfxaB4Nn2p5qz6KAiumY74qH86pgu1HA1A",
+        live: false,
+        requestedBy
+    }))
+}
+
+export function extractTrackId(query: string) {
+    if(!validate(query)) throw new Error("Invalid track url")
+    const trackIdWithUrlParams = query.split("/").at(-1)
+    if(!trackIdWithUrlParams) throw new Error("Cannot find track ID")
+    return trackIdWithUrlParams.split("?")[0]
+}
+
+// used for bridging
+export async function searchOneTrack(query: string) {
+    const url = DeezerAPIRoutes.searchTrack(query, 1)
+
+    const trackRes = await fetch(url)
+    if(trackRes.status !== 200) throw new Error("Fetch failed")
+
+    const trackData = await trackRes.json() as DeezerSearchTrackResponse
+    const track = trackData as DeezerSearchTrackResponse | undefined
+    return track
+}
+
+export async function streamTrack(track: Track, ext: DeezerExtractor) {
     const decryptionKey = ext.options.decryptionKey
     if (!decryptionKey) throw new Error("MISSING DEEZER DECRYPTION KEY") // cant decrypt due to missing key
 
     const crypto = await getCrypto()
-    const trackId = trackIdWithUrlParams.split("?")[0]
+    const trackId = extractTrackId(track.url)
 
     const trackHash = crypto.createHash("md5").update(trackId, "ascii").digest("hex")
     const trackKey = Buffer.alloc(16)
