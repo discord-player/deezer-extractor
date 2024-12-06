@@ -51,6 +51,8 @@ export class DeezerExtractor extends BaseExtractor<DeezerExtractorOptions> {
                 licenseToken,
                 csrfToken
             }
+
+            this.context.player.debug('USER INFO EXT: ' + JSON.stringify(this.userInfo))
         }
     }
 
@@ -105,7 +107,8 @@ export class DeezerExtractor extends BaseExtractor<DeezerExtractorOptions> {
 
     async bridge(track: Track): Promise<ExtractorStreamable | null> {
         const deezerTrack = await searchOneTrack(`${track.author} ${track.source === "youtube" ? track.cleanTitle : track.title}`)
-        if(!deezerTrack || !deezerTrack?.data[0]) return null
+
+        if(!deezerTrack) return null
         const dpTrack = buildTrackFromSearch(deezerTrack, this.context.player, track.requestedBy)
 
         const stream = this.stream(dpTrack[0])

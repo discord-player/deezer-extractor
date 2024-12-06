@@ -24,7 +24,7 @@ const DeezerAPIRoutes = {
     }
 } as const
 
-export type ArrayOrObject<T> = T | T[] 
+export type ArrayOrObject<T> = T | T[]
 
 export interface DeezerSearchTrackResponse {
     data: {
@@ -45,7 +45,7 @@ export interface DeezerSearchTrackResponse {
 }
 
 export function buildTrackFromSearch(track: DeezerSearchTrackResponse, player: Player, requestedBy?: Track['requestedBy']) {
-    return track.data.map((v) => new Track(player, {
+    const tracks = track.data.map((v) => new Track(player, {
         source: "arbitrary",
         duration: Util.buildTimeCode(Util.parseMS(v.duration * 1000)),
         author: Array.isArray(v.artist) ? v.artist.map(a => a.name).join(", ") : v.artist.name,
@@ -55,12 +55,14 @@ export function buildTrackFromSearch(track: DeezerSearchTrackResponse, player: P
         live: false,
         requestedBy
     }))
+
+    return tracks
 }
 
 export function extractTrackId(query: string) {
-    if(!validate(query)) throw new Error("Invalid track url")
+    if (!validate(query)) throw new Error("Invalid track url")
     const trackIdWithUrlParams = query.split("/").at(-1)
-    if(!trackIdWithUrlParams) throw new Error("Cannot find track ID")
+    if (!trackIdWithUrlParams) throw new Error("Cannot find track ID")
     return trackIdWithUrlParams.split("?")[0]
 }
 
@@ -69,11 +71,10 @@ export async function searchOneTrack(query: string) {
     const url = DeezerAPIRoutes.searchTrack(query, 1)
 
     const trackRes = await fetch(url)
-    if(trackRes.status !== 200) throw new Error("Fetch failed")
+    if (trackRes.status !== 200) throw new Error("Fetch failed")
 
-    const trackData = await trackRes.json() as DeezerSearchTrackResponse
-    const track = trackData as DeezerSearchTrackResponse | undefined
-    return track
+    const trackData = await trackRes.json() as DeezerSearchTrackResponse | undefined
+    return trackData
 }
 
 export async function streamTrack(track: Track, ext: DeezerExtractor) {
@@ -102,15 +103,9 @@ export async function streamTrack(track: Track, ext: DeezerExtractor) {
         })
     })
 
-    const trackInfo = await trackInfoRes.json()
+    const songInfo = (await trackInfoRes.json()).results.data[0]
 
-    // no streaming data found
-    if (Array.isArray(trackInfo.error) && (trackInfo.error as unknown[]).length !== 0) throw new Error("Unable to extract track\n" + JSON.stringify(trackInfo.error))
-    if (typeof trackInfo.error === "object" && Object.keys(trackInfo.error).length !== 0) throw new Error("Unable to extract track\n" + JSON.stringify(trackInfo.error))
-
-    const info = trackInfo.data[0]
-
-    const streamInfoRes = await fetch(`${ext.userInfo.mediaUrl}/v1/get-url`, {
+    const streamInfoRes = await fetch('https://media.deezer.com/v1/get_url', {
         method: "POST",
         body: JSON.stringify({
             license_token: ext.userInfo.licenseToken,
@@ -130,13 +125,14 @@ export async function streamTrack(track: Track, ext: DeezerExtractor) {
                     format: 'MP3_MISC'
                 }]
             }],
-            track_tokens: [info.TRACK_TOKEN]
+            track_tokens: [songInfo.TRACK_TOKEN]
         })
     })
-
     const streamInfo = await streamInfoRes.json()
 
     const trackMediaUrl = streamInfo.data[0].media[0].sources[0].url
+
+    ext.context.player.debug("DEEZER FOUND MEDIA URL " + trackMediaUrl)
 
     const trackReq = await fetch(trackMediaUrl)
     // @ts-ignore
