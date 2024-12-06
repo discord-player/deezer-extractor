@@ -37,18 +37,20 @@ export class DeezerExtractor extends BaseExtractor<DeezerExtractorOptions> {
             const deezerUsrDataUrl = `https://www.deezer.com/ajax/gw-light.php?method=deezer.getUserData&input=3&api_version=1.0&api_token=${randomToken}`
 
             const usrDataRes = await fetch(deezerUsrDataUrl)
-            const cookie = usrDataRes.headers.get("set-cookie")!
-            this.userInfo.cookie = cookie
             const usrData = await usrDataRes.json()
 
             const licenseToken = usrData.results.USER.OPTIONS.license_token
             if(typeof licenseToken !== "string") throw new Error("Unable to get licenseToken")
-            this.userInfo.licenseToken = licenseToken
 
             const csrfToken = usrData.results.checkForm
             if(typeof csrfToken !== "string") throw new Error("Unable to get csrf token which is required for decryption")
 
-            this.userInfo.mediaUrl = usrData.results.URL_MEDIA || "https://media.deezer.com"
+            this.userInfo = {
+                mediaUrl: usrData.results.URL_MEDIA || "https://media.deezer.com",
+                cookie: usrDataRes.headers.get("set-cookie")!,
+                licenseToken,
+                csrfToken
+            }
         }
     }
 
