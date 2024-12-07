@@ -1,6 +1,6 @@
 {
   "name": "discord-player-deezer",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "A custom extractor made for discord-player that enables you to extract from Deezer.",
   "main": "dist/index.js",
   "author": "retro_ig",
