@@ -22,7 +22,8 @@
   "scripts": {
     "build": "yarn lint && tsup",
     "lint": "tslint -p tsconfig.json",
-    "npm:publish": "yarn build && npm publish --access public"
+    "npm:publish": "yarn build && npm publish --access public",
+    "prepare": "tsup"
   },
   "repository": {
     "type": "git",
