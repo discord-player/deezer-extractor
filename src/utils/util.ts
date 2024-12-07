@@ -160,7 +160,7 @@ export async function streamTrack(track: Track, ext: DeezerExtractor) {
                 buffer = Buffer.concat([buffer, chunk])
             }
             
-            const blowfishDecrypter = new Blowfish(new Uint8Array(trackKey), Blowfish.MODE.CBC)
+            const blowfishDecrypter = new Blowfish(new Uint8Array(trackKey), Blowfish.MODE.CBC, Blowfish.PADDING.NULL)
             blowfishDecrypter.setIv(new Uint8Array(IV))
 
             while (buffer.length >= bufferSize) {
