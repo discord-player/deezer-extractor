@@ -1,6 +1,6 @@
 import { BaseExtractor, ExtractorSearchContext, ExtractorStreamable, Track, Playlist, Util as DPUtil, ExtractorInfo } from "discord-player"
 import { Playlist as DeezerPlaylist, Track as DeezerTrack, getData } from "@mithron/deezer-music-metadata";
-import { buildTrackFromSearch, getCrypto, searchOneTrack, streamTrack, validate } from "./utils/util";
+import { buildTrackFromSearch, deezerRegex, getCrypto, searchOneTrack, streamTrack, validate } from "./utils/util";
 
 /**
  * -------------------------------NOTICE-------------------------------------
@@ -23,13 +23,29 @@ export type DeezerUserInfo = {
     mediaUrl: string;
 }
 
+export const Warnings = {
+    LegacyOpenSSL: "OpenSSL legacy provider is needed for decrypting streams. Rerun your code with `node --openssl-legacy-provider` or set the environment variable NODE_OPTIONS to include `-openssl-legacy-provider`. Stream extraction has been disabled.",
+    MissingDecryption: "Decryption Key missing! This is needed for extracting streams."
+} as const
+export type Warnings = (typeof Warnings)[keyof typeof Warnings]
+
 export class DeezerExtractor extends BaseExtractor<DeezerExtractorOptions> {
     static identifier: string = "com.retrouser955.discord-player.deezr-ext"
     userInfo!: DeezerUserInfo
 
     async activate(): Promise<void> {
-        if(!this.options.decryptionKey) process.emitWarning("Decryption Key missing! This is needed for extracting streams.")
+        if(!this.options.decryptionKey) process.emitWarning(Warnings.MissingDecryption)
         else {
+            if(typeof process.env.NODE_OPTIONS === "string" && !process.env.NODE_OPTIONS.includes("--openssl-legacy-provider")) {
+                process.emitWarning(Warnings.LegacyOpenSSL)
+                this.options.decryptionKey = undefined
+                return;
+            }
+            if(!process.execArgv.includes("--openssl-legacy-provider")) {
+                process.emitWarning(Warnings.LegacyOpenSSL)
+                this.options.decryptionKey = undefined;
+                return
+            }
             // extract deezer username
             // dynamically load crypto because some might not want streaming
             const crypto = await getCrypto()
@@ -81,6 +97,10 @@ export class DeezerExtractor extends BaseExtractor<DeezerExtractorOptions> {
     }
     
     async handle(query: string, context: ExtractorSearchContext): Promise<ExtractorInfo> {
+        if (deezerRegex.share.test(query)) {
+            const redirect = await fetch(query);
+            query = redirect.url; // follow the redirect of deezer page links
+        }
         const metadata = await getData(query)
 
         if(metadata?.type === "song") return this.createResponse(null, [this.buildTrack(metadata, context)])
