@@ -33,11 +33,3 @@ await player.extractors.register(DeezerExtractor, {
     decryptionKey: "master-decryption-key"
 })
 ```
-
-# Important information
-
-As Node has migrated from openssl for decryption, we must use the `--openssl-legacy-provider` flag when starting our application with stream extraction
-
-```bash
-$ node --openssl-legacy-provider yourfile.js
-```
