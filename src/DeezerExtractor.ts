@@ -36,16 +36,6 @@ export class DeezerExtractor extends BaseExtractor<DeezerExtractorOptions> {
     async activate(): Promise<void> {
         if(!this.options.decryptionKey) process.emitWarning(Warnings.MissingDecryption)
         else {
-            if(typeof process.env.NODE_OPTIONS === "string" && !process.env.NODE_OPTIONS.includes("--openssl-legacy-provider")) {
-                process.emitWarning(Warnings.LegacyOpenSSL)
-                this.options.decryptionKey = undefined
-                return;
-            }
-            if(!process.execArgv.includes("--openssl-legacy-provider")) {
-                process.emitWarning(Warnings.LegacyOpenSSL)
-                this.options.decryptionKey = undefined;
-                return
-            }
             // extract deezer username
             // dynamically load crypto because some might not want streaming
             const crypto = await getCrypto()
