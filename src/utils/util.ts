@@ -2,6 +2,7 @@ import { type Player, Track, Util } from "discord-player";
 import type { DeezerExtractor } from "../DeezerExtractor";
 import { Readable, PassThrough } from 'stream'
 import type { BinaryLike, CipherGCMTypes, CipherKey, Decipher } from "crypto";
+import Blowfish from "blowfish-node";
 
 const IV = Buffer.from(Array.from({ length: 8 }, (_, x) => x))
 
@@ -158,20 +159,16 @@ export async function streamTrack(track: Track, ext: DeezerExtractor) {
             } else {
                 buffer = Buffer.concat([buffer, chunk])
             }
+            
+            const blowfishDecrypter = new Blowfish(new Uint8Array(trackKey), Blowfish.MODE.CBC, Blowfish.PADDING.NULL)
+            blowfishDecrypter.setIv(new Uint8Array(IV))
 
             while (buffer.length >= bufferSize) {
                 const bufferSized = buffer.subarray(0, bufferSize)
 
                 if (i % 3 === 0) {
-                    const decipher = crypto.createDecipheriv(
-                        'bf-cbc' as unknown as CipherGCMTypes,
-                        trackKey as unknown as CipherKey,
-                        IV as unknown as BinaryLike
-                    ).setAutoPadding(false) as unknown as Decipher
-
-                    // @ts-ignore
-                    passThrough.write(decipher.update(bufferSized as unknown as ArrayBufferView))
-                    passThrough.write(decipher.final())
+                    const decipher = Buffer.from(blowfishDecrypter.decode(new Uint8Array(bufferSized), Blowfish.TYPE.UINT8_ARRAY))
+                    passThrough.write(decipher)
                 } else {
                     passThrough.write(bufferSized)
                 }

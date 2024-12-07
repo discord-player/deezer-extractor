@@ -1,6 +1,6 @@
 import { BaseExtractor, ExtractorSearchContext, ExtractorStreamable, Track, Playlist, Util as DPUtil, ExtractorInfo } from "discord-player"
 import { Playlist as DeezerPlaylist, Track as DeezerTrack, getData } from "@mithron/deezer-music-metadata";
-import { buildTrackFromSearch, getCrypto, searchOneTrack, streamTrack, validate } from "./utils/util";
+import { buildTrackFromSearch, deezerRegex, getCrypto, searchOneTrack, streamTrack, validate } from "./utils/util";
 
 /**
  * -------------------------------NOTICE-------------------------------------
@@ -23,12 +23,17 @@ export type DeezerUserInfo = {
     mediaUrl: string;
 }
 
+export const Warnings = {
+    MissingDecryption: "Decryption Key missing! This is needed for extracting streams."
+} as const
+export type Warnings = (typeof Warnings)[keyof typeof Warnings]
+
 export class DeezerExtractor extends BaseExtractor<DeezerExtractorOptions> {
     static identifier: string = "com.retrouser955.discord-player.deezr-ext"
     userInfo!: DeezerUserInfo
 
     async activate(): Promise<void> {
-        if(!this.options.decryptionKey) process.emitWarning("Decryption Key missing! This is needed for extracting streams.")
+        if(!this.options.decryptionKey) process.emitWarning(Warnings.MissingDecryption)
         else {
             // extract deezer username
             // dynamically load crypto because some might not want streaming
@@ -81,6 +86,10 @@ export class DeezerExtractor extends BaseExtractor<DeezerExtractorOptions> {
     }
     
     async handle(query: string, context: ExtractorSearchContext): Promise<ExtractorInfo> {
+        if (deezerRegex.share.test(query)) {
+            const redirect = await fetch(query);
+            query = redirect.url; // follow the redirect of deezer page links
+        }
         const metadata = await getData(query)
 
         if(metadata?.type === "song") return this.createResponse(null, [this.buildTrack(metadata, context)])
