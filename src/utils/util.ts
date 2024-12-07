@@ -159,15 +159,15 @@ export async function streamTrack(track: Track, ext: DeezerExtractor) {
             } else {
                 buffer = Buffer.concat([buffer, chunk])
             }
-
-            const blowfishDecrypter = new Blowfish(trackKey, Blowfish.MODE.CBC)
-            blowfishDecrypter.setIv(IV)
+            
+            const blowfishDecrypter = new Blowfish(new Uint8Array(trackKey), Blowfish.MODE.CBC)
+            blowfishDecrypter.setIv(new Uint8Array(IV))
 
             while (buffer.length >= bufferSize) {
                 const bufferSized = buffer.subarray(0, bufferSize)
 
                 if (i % 3 === 0) {
-                    const decipher = Buffer.from(blowfishDecrypter.decode(bufferSized, Blowfish.TYPE.UINT8_ARRAY))
+                    const decipher = Buffer.from(blowfishDecrypter.decode(new Uint8Array(bufferSized), Blowfish.TYPE.UINT8_ARRAY))
                     passThrough.write(decipher)
                 } else {
                     passThrough.write(bufferSized)
