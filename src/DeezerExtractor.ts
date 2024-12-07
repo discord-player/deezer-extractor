@@ -24,7 +24,6 @@ export type DeezerUserInfo = {
 }
 
 export const Warnings = {
-    LegacyOpenSSL: "OpenSSL legacy provider is needed for decrypting streams. Rerun your code with `node --openssl-legacy-provider` or set the environment variable NODE_OPTIONS to include `-openssl-legacy-provider`. Stream extraction has been disabled.",
     MissingDecryption: "Decryption Key missing! This is needed for extracting streams."
 } as const
 export type Warnings = (typeof Warnings)[keyof typeof Warnings]
