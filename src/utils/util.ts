@@ -1,7 +1,6 @@
 import { type Player, Track, Util } from "discord-player";
 import type { DeezerExtractor } from "../DeezerExtractor";
 import { Readable, PassThrough } from 'stream'
-import type { BinaryLike, CipherGCMTypes, CipherKey, Decipher } from "crypto";
 import Blowfish from "blowfish-node";
 
 const IV = Buffer.from(Array.from({ length: 8 }, (_, x) => x))
@@ -17,6 +16,15 @@ export async function getCrypto() {
     return rawCrypto
 }
 
+export async function isUrl(query: string) {
+  try {
+    new URL(query)
+    return true
+  } catch {
+    return false
+  }
+}
+
 const DeezerAPIRoutes = {
     searchTrack(query: string, limit?: number) {
         const url = `https://api.deezer.com/search/track?q=${encodeURIComponent(query)}&${limit ? `limit=${limit}` : ""}`
@@ -24,6 +32,20 @@ const DeezerAPIRoutes = {
         return url
     }
 } as const
+
+export async function search(query: string, limit: number = 10) {
+  const route = DeezerAPIRoutes.searchTrack(query, limit);
+
+  const response = await fetch(route)
+
+  if(!response.status.toString().startsWith("2")) throw new Error("Server responded with a non 2xx status.")
+
+  const jsonTrack = await response.json()
+
+  if(!jsonTrack.data || !Array.isArray(jsonTrack.data) || jsonTrack.data.length === 0) throw new Error("Unable get tracks from Deezer for the query '" + query + "'")
+
+  return jsonTrack as DeezerSearchTrackResponse
+}
 
 export type ArrayOrObject<T> = T | T[]
 

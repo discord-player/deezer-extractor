@@ -5,7 +5,6 @@
   "main": "dist/index.js",
   "author": "retro_ig",
   "license": "MIT",
-  "private": false,
   "dependencies": {
     "@mithron/deezer-music-metadata": "^1.0.3",
     "blowfish-node": "^1.1.4"

@@ -1,6 +1,6 @@
 import { BaseExtractor, ExtractorSearchContext, ExtractorStreamable, Track, Playlist, Util as DPUtil, ExtractorInfo } from "discord-player"
 import { Playlist as DeezerPlaylist, Track as DeezerTrack, getData } from "@mithron/deezer-music-metadata";
-import { buildTrackFromSearch, deezerRegex, getCrypto, searchOneTrack, streamTrack, validate } from "./utils/util";
+import { buildTrackFromSearch, deezerRegex, getCrypto, isUrl, search, searchOneTrack, streamTrack, validate } from "./utils/util";
 
 /**
  * -------------------------------NOTICE-------------------------------------
@@ -13,7 +13,8 @@ import { buildTrackFromSearch, deezerRegex, getCrypto, searchOneTrack, streamTra
 
 export type DeezerExtractorOptions = {
     decryptionKey?: string; // needed for decrypting deezer songs
-    createStream?: (track: Track, ext: DeezerExtractor) => Promise<ExtractorStreamable>
+    createStream?: (track: Track, ext: DeezerExtractor) => Promise<ExtractorStreamable>;
+    searchLimit?: number;
 }
 
 export type DeezerUserInfo = {
@@ -86,6 +87,18 @@ export class DeezerExtractor extends BaseExtractor<DeezerExtractorOptions> {
     }
     
     async handle(query: string, context: ExtractorSearchContext): Promise<ExtractorInfo> {
+        if(!isUrl(query)) {
+          // Player is using deezer protocol
+          try {
+            const tracks = buildTrackFromSearch(await search(query, this.options.searchLimit), this.context.player, context.requestedBy);
+
+            return this.createResponse(null, tracks);
+          } catch {
+            // deezer didnt return a good api response
+            return this.createResponse()
+          }
+        }
+
         if (deezerRegex.share.test(query)) {
             const redirect = await fetch(query);
             query = redirect.url; // follow the redirect of deezer page links
