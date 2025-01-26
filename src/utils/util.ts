@@ -18,6 +18,7 @@ export async function getCrypto() {
 
 export async function isUrl(query: string) {
   try {
+    /* tslint:disable-next-line no-unused-expression */
     new URL(query)
     return true
   } catch {
