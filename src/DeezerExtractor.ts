@@ -34,6 +34,7 @@ export class DeezerExtractor extends BaseExtractor<DeezerExtractorOptions> {
     userInfo!: DeezerUserInfo
 
     async activate(): Promise<void> {
+        this.protocols = ["deezer"]
         if(!this.options.decryptionKey) process.emitWarning(Warnings.MissingDecryption)
         else {
             // extract deezer username
@@ -60,6 +61,10 @@ export class DeezerExtractor extends BaseExtractor<DeezerExtractorOptions> {
 
             this.context.player.debug('USER INFO EXT: ' + JSON.stringify(this.userInfo))
         }
+    }
+
+    async deactivate() {
+      this.protocols = []
     }
 
     async validate(query: string, type: SearchQueryType & "deezer"): Promise<boolean> {
