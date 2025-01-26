@@ -1,4 +1,4 @@
-import { BaseExtractor, ExtractorSearchContext, ExtractorStreamable, Track, Playlist, Util as DPUtil, ExtractorInfo } from "discord-player"
+import { BaseExtractor, ExtractorSearchContext, ExtractorStreamable, Track, Playlist, Util as DPUtil, ExtractorInfo, SearchQueryType } from "discord-player"
 import { Playlist as DeezerPlaylist, Track as DeezerTrack, getData } from "@mithron/deezer-music-metadata";
 import { buildTrackFromSearch, deezerRegex, getCrypto, isUrl, search, searchOneTrack, streamTrack, validate } from "./utils/util";
 
@@ -62,8 +62,8 @@ export class DeezerExtractor extends BaseExtractor<DeezerExtractorOptions> {
         }
     }
 
-    async validate(query: string): Promise<boolean> {
-        return validate(query)
+    async validate(query: string, type: SearchQueryType & "deezer"): Promise<boolean> {
+        return validate(query) || type === "deezer"
     }
 
     buildPlaylistData(data: DeezerPlaylist, handleContext: ExtractorSearchContext) {
@@ -87,16 +87,10 @@ export class DeezerExtractor extends BaseExtractor<DeezerExtractorOptions> {
     }
     
     async handle(query: string, context: ExtractorSearchContext): Promise<ExtractorInfo> {
-        if(!isUrl(query)) {
-          // Player is using deezer protocol
-          try {
-            const tracks = buildTrackFromSearch(await search(query, this.options.searchLimit), this.context.player, context.requestedBy);
-
-            return this.createResponse(null, tracks);
-          } catch {
-            // deezer didnt return a good api response
-            return this.createResponse()
-          }
+        if(context.protocol === "deezer" && !isUrl(query)) {
+          const rawSearch = await search(query)
+          const tracks = buildTrackFromSearch(rawSearch, this.context.player, context.requestedBy)
+          return this.createResponse(null, tracks)
         }
 
         if (deezerRegex.share.test(query)) {

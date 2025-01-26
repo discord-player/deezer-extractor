@@ -1,6 +1,6 @@
 {
   "name": "discord-player-deezer",
-  "version": "2.2.0",
+  "version": "2.2.1-dev.0",
   "description": "A custom extractor made for discord-player that enables you to extract from Deezer.",
   "main": "dist/index.js",
   "author": "retro_ig",
@@ -10,8 +10,9 @@
     "blowfish-node": "^1.1.4"
   },
   "devDependencies": {
-    "@discord-player/extractor": "^4.5.1",
-    "discord-player": "^6.7.1",
+    "@discord-player/extractor": "^7.1.0",
+    "@types/node": "^22.10.10",
+    "discord-player": "^7.1.0",
     "prettier": "^3.4.2",
     "tslint": "^6.1.3",
     "tslint-config-prettier": "^1.18.0",
@@ -30,6 +31,5 @@
   },
   "bugs": {
     "url": "https://github.com/retrouser955/discord-player-deezer/issues"
-  },
-  "packageManager": "yarn@4.5.1+sha512.341db9396b6e289fecc30cd7ab3af65060e05ebff4b3b47547b278b9e67b08f485ecd8c79006b405446262142c7a38154445ef7f17c1d5d1de7d90bf9ce7054d"
+  }
 }
