@@ -58,6 +58,7 @@ async function fetchDeezerAnonUser(): Promise<DeezerUserInfo> {
 export class DeezerExtractor extends BaseExtractor<DeezerExtractorOptions> {
     static readonly identifier: string = "com.retrouser955.discord-player.deezr-ext"
     userInfo!: DeezerUserInfo
+    /* tslint:disable-next-line */
     __interval?: ReturnType<typeof setInterval>
 
     async activate(): Promise<void> {
