@@ -68,7 +68,7 @@ export class DeezerExtractor extends BaseExtractor<DeezerExtractorOptions> {
     }
 
     async validate(query: string, type: SearchQueryType & "deezer"): Promise<boolean> {
-        return validate(query) || type === "deezer"
+        return validate(query) || type === "deezer" || !isUrl(query)
     }
 
     buildPlaylistData(data: DeezerPlaylist, handleContext: ExtractorSearchContext) {
@@ -92,7 +92,7 @@ export class DeezerExtractor extends BaseExtractor<DeezerExtractorOptions> {
     }
     
     async handle(query: string, context: ExtractorSearchContext): Promise<ExtractorInfo> {
-        if(context.protocol === "deezer" && !isUrl(query)) {
+        if(!isUrl(query)) {
           const rawSearch = await search(query)
           const tracks = buildTrackFromSearch(rawSearch, this.context.player, context.requestedBy)
           return this.createResponse(null, tracks)

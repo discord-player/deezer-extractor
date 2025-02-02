@@ -18,9 +18,8 @@ export async function getCrypto() {
 
 export function isUrl(query: string) {
   try {
-    /* tslint:disable-next-line no-unused-expression */
-    new URL(query)
-    return true
+    const url = new URL(query)
+    return url.protocol === "http" || url.protocol === "https"
   } catch {
     return false
   }
