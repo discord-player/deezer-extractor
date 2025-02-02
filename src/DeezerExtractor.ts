@@ -1,6 +1,7 @@
 import { BaseExtractor, ExtractorSearchContext, ExtractorStreamable, Track, Playlist, Util as DPUtil, ExtractorInfo, SearchQueryType } from "discord-player"
 import { Playlist as DeezerPlaylist, Track as DeezerTrack, getData } from "@mithron/deezer-music-metadata";
 import { buildTrackFromSearch, deezerRegex, getCrypto, isUrl, search, searchOneTrack, streamTrack, validate } from "./utils/util";
+import { setTimeout } from "node:timers/promises"
 
 /**
  * -------------------------------NOTICE-------------------------------------
@@ -15,6 +16,7 @@ export type DeezerExtractorOptions = {
     decryptionKey?: string; // needed for decrypting deezer songs
     createStream?: (track: Track, ext: DeezerExtractor) => Promise<ExtractorStreamable>;
     searchLimit?: number;
+    reloadUserInterval?: number;
 }
 
 export type DeezerUserInfo = {
@@ -29,41 +31,61 @@ export const Warnings = {
 } as const
 export type Warnings = (typeof Warnings)[keyof typeof Warnings]
 
+async function fetchDeezerAnonUser(): Promise<DeezerUserInfo> {
+  // extract deezer username
+  // dynamically load crypto because some might not want streaming
+  const crypto = await getCrypto()
+  const randomToken = crypto.randomBytes(16).toString("hex")
+  const deezerUsrDataUrl = `https://www.deezer.com/ajax/gw-light.php?method=deezer.getUserData&input=3&api_version=1.0&api_token=${randomToken}`
+
+  const usrDataRes = await fetch(deezerUsrDataUrl)
+  const usrData = await usrDataRes.json()
+
+  const licenseToken = usrData.results.USER.OPTIONS.license_token
+  if(typeof licenseToken !== "string") throw new Error("Unable to get licenseToken")
+
+  const csrfToken = usrData.results.checkForm
+  if(typeof csrfToken !== "string") throw new Error("Unable to get csrf token which is required for decryption")
+
+  return {
+    cookie: usrDataRes.headers.get("set-cookie")!,
+    licenseToken,
+    csrfToken,
+    mediaUrl: usrData.results.URL_MEDIA || "https://media.deezer.com",
+  }
+}
+
 export class DeezerExtractor extends BaseExtractor<DeezerExtractorOptions> {
-    static identifier: string = "com.retrouser955.discord-player.deezr-ext"
+    static readonly identifier: string = "com.retrouser955.discord-player.deezr-ext"
     userInfo!: DeezerUserInfo
+    __interval?: ReturnType<typeof setInterval>
 
     async activate(): Promise<void> {
         this.protocols = ["deezer"]
         if(!this.options.decryptionKey) process.emitWarning(Warnings.MissingDecryption)
         else {
-            // extract deezer username
-            // dynamically load crypto because some might not want streaming
-            const crypto = await getCrypto()
-            const randomToken = crypto.randomBytes(16).toString("hex")
-            const deezerUsrDataUrl = `https://www.deezer.com/ajax/gw-light.php?method=deezer.getUserData&input=3&api_version=1.0&api_token=${randomToken}`
-
-            const usrDataRes = await fetch(deezerUsrDataUrl)
-            const usrData = await usrDataRes.json()
-
-            const licenseToken = usrData.results.USER.OPTIONS.license_token
-            if(typeof licenseToken !== "string") throw new Error("Unable to get licenseToken")
-
-            const csrfToken = usrData.results.checkForm
-            if(typeof csrfToken !== "string") throw new Error("Unable to get csrf token which is required for decryption")
-
-            this.userInfo = {
-                mediaUrl: usrData.results.URL_MEDIA || "https://media.deezer.com",
-                cookie: usrDataRes.headers.get("set-cookie")!,
-                licenseToken,
-                csrfToken
-            }
+            this.userInfo = await fetchDeezerAnonUser()
 
             this.context.player.debug('USER INFO EXT: ' + JSON.stringify(this.userInfo))
         }
+
+        this.__interval = setInterval(async () => {
+          try {
+            this.userInfo = await fetchDeezerAnonUser()
+          } catch {
+            this.context.player.debug("[DEEZER_EXTRACTOR_ERR]: Unable to fetch user information from Deezer. Retrying in 3 seconds ...")
+            await setTimeout(3000/* 3 seconds */)
+            try {
+              this.userInfo = await fetchDeezerAnonUser()
+            } catch (err) {
+              this.context.player.debug("[DEEZER_EXTRACTOR_ERR]: Retry failed. Using old user ...")
+            }
+          }
+        }, this.options.reloadUserInterval || 8.64e+7/* one day */).unref()
     }
 
     async deactivate() {
+      if(this.__interval) clearInterval(this.__interval)
       this.protocols = []
     }
 
