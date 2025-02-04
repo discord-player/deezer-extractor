@@ -19,7 +19,7 @@ export async function getCrypto() {
 export function isUrl(query: string) {
   try {
     const url = new URL(query)
-    return url.protocol === "http" || url.protocol === "https"
+    return ['https:', 'http:'].includes(url.protocol)
   } catch {
     return false
   }
