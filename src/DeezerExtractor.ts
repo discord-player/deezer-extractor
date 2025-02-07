@@ -17,6 +17,7 @@ export type DeezerExtractorOptions = {
     createStream?: (track: Track, ext: DeezerExtractor) => Promise<ExtractorStreamable>;
     searchLimit?: number;
     reloadUserInterval?: number;
+    priority?: number;
 }
 
 export type DeezerUserInfo = {
@@ -68,6 +69,10 @@ export class DeezerExtractor extends BaseExtractor<DeezerExtractorOptions> {
             this.userInfo = await fetchDeezerAnonUser()
 
             this.context.player.debug('USER INFO EXT: ' + JSON.stringify(this.userInfo))
+        }
+
+        if(this.options.priority) {
+          this.priority = this.options.priority;
         }
 
         this.__interval = setInterval(async () => {
