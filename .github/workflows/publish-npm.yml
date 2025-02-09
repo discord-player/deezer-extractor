@@ -13,6 +13,9 @@ jobs:
               with:
                 node-version: 20
                 registry-url: https://registry.npmjs.org/
-            - run: yarn npm:publish
+            - name: install packages
+              runs: yarn
+            - name: publish npm
+              runs: yarn npm:publish
               env:
                 NODE_AUTH_TOKEN: ${{secrets.npm_token}}
