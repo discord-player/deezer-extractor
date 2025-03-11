@@ -37,14 +37,14 @@ export type Warnings = (typeof Warnings)[keyof typeof Warnings]
 
 function parseCookie(obj: Record<string, string>) {
   let str = ""
-  for(const key in obj) {
+  for(const key of Object.keys(obj)) {
     str += ` ${key}=${obj[key]};`
   }
 
   return str.trim()
 }
 
-async function fetchDeezerUser(arl: string, ext: DeezerExtractor): Promise<DeezerUserInfo> {
+async function fetchDeezerUser(ext: DeezerExtractor): Promise<DeezerUserInfo> {
   // extract deezer username
   // dynamically load crypto because some might not want streaming
   const crypto = await getCrypto()
@@ -93,7 +93,7 @@ export class DeezerExtractor extends BaseExtractor<DeezerExtractorOptions> {
         this.protocols = ["deezer"]
         if(!this.options.decryptionKey) process.emitWarning(Warnings.MissingDecryption)
         else {
-            this.userInfo = await fetchDeezerUser(this.options.arl, this)
+            this.userInfo = await fetchDeezerUser(this)
 
             this.context.player.debug('USER INFO EXT: ' + JSON.stringify(this.userInfo))
         }
@@ -104,12 +104,12 @@ export class DeezerExtractor extends BaseExtractor<DeezerExtractorOptions> {
 
         this.__interval = setInterval(async () => {
           try {
-            this.userInfo = await fetchDeezerUser(this.options.arl, this)
+            this.userInfo = await fetchDeezerUser(this)
           } catch {
             this.context.player.debug("[DEEZER_EXTRACTOR_ERR]: Unable to fetch user information from Deezer. Retrying in 3 seconds ...")
             await setTimeout(3000/* 3 seconds */)
             try {
-              this.userInfo = await fetchDeezerUser(this.options.arl, this)
+              this.userInfo = await fetchDeezerUser(this)
             } catch (err) {
               this.context.player.debug("[DEEZER_EXTRACTOR_ERR]: Retry failed. Using old user ...")
             }
