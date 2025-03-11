@@ -120,7 +120,7 @@ export async function streamTrack(track: Track, ext: DeezerExtractor) {
     const trackInfoRes = await ext.fetch(`https://www.deezer.com/ajax/gw-light.php?method=song.getListData&input=3&api_version=1.0&api_token=${ext.userInfo.csrfToken}`, {
         method: "POST",
         headers: {
-            Cookie: ext.userInfo.cookie,
+            Cookie: `${ext.userInfo.cookie}; arl=${ext.options.arl}`,
             'User-Agent': "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:120.0) Gecko/20100101 Firefox/120.0",
             'DNT': '1'
         },

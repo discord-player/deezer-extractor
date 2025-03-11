@@ -75,18 +75,17 @@ export class DeezerExtractor extends BaseExtractor<DeezerExtractorOptions> {
     __interval?: ReturnType<typeof setInterval>
 
     async fetch(input: Parameters<typeof fetch>[0], options?: Parameters<typeof fetch>[1]) {
-      return fetch(input, {
-        ...options,
-        headers: {
-          ...options?.headers,
-          Cookie: parseCookie({ arl: this.options.arl }),
-          'User-Agent': "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:120.0) Gecko/20100101 Firefox/120.0",
-          'DNT': '1',
-          "Origin": "https://www.deezer.com",
-          'Connection': 'keep-alive',
-          'Referer': 'https://www.deezer.com/login'
-        }
-      })
+      if(!options) options = {}
+      options.headers = {
+        Cookie: parseCookie({ arl: this.options.arl }),
+        'User-Agent': "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:120.0) Gecko/20100101 Firefox/120.0",
+        'DNT': '1',
+        "Origin": "https://www.deezer.com",
+        'Connection': 'keep-alive',
+        'Referer': 'https://www.deezer.com/login',
+        ...options?.headers,
+      }
+      return fetch(input, options)
     }
 
     async activate(): Promise<void> {
