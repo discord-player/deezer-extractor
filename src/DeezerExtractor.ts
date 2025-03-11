@@ -2,6 +2,7 @@ import { BaseExtractor, ExtractorSearchContext, ExtractorStreamable, Track, Play
 import { Playlist as DeezerPlaylist, Track as DeezerTrack, getData } from "@mithron/deezer-music-metadata";
 import { buildTrackFromSearch, deezerRegex, getCrypto, isUrl, search, searchOneTrack, streamTrack, validate } from "./utils/util";
 import { setTimeout } from "node:timers/promises"
+import { BaseDecryptor } from "./Crypto/BaseDecryptor";
 
 /**
  * -------------------------------NOTICE-------------------------------------
@@ -18,6 +19,8 @@ export type DeezerExtractorOptions = {
     searchLimit?: number;
     reloadUserInterval?: number;
     priority?: number;
+    arl: string;
+    decryptor?: typeof BaseDecryptor
 }
 
 export type DeezerUserInfo = {
@@ -32,14 +35,23 @@ export const Warnings = {
 } as const
 export type Warnings = (typeof Warnings)[keyof typeof Warnings]
 
-async function fetchDeezerAnonUser(): Promise<DeezerUserInfo> {
+function parseCookie(obj: Record<string, string>) {
+  let str = ""
+  for(const key in obj) {
+    str += ` ${key}=${obj[key]};`
+  }
+
+  return str.trim()
+}
+
+async function fetchDeezerUser(arl: string, ext: DeezerExtractor): Promise<DeezerUserInfo> {
   // extract deezer username
   // dynamically load crypto because some might not want streaming
   const crypto = await getCrypto()
   const randomToken = crypto.randomBytes(16).toString("hex")
   const deezerUsrDataUrl = `https://www.deezer.com/ajax/gw-light.php?method=deezer.getUserData&input=3&api_version=1.0&api_token=${randomToken}`
 
-  const usrDataRes = await fetch(deezerUsrDataUrl)
+  const usrDataRes = await ext.fetch(deezerUsrDataUrl)
   const usrData = await usrDataRes.json()
 
   const licenseToken = usrData.results.USER.OPTIONS.license_token
@@ -62,11 +74,26 @@ export class DeezerExtractor extends BaseExtractor<DeezerExtractorOptions> {
     /* tslint:disable-next-line */
     __interval?: ReturnType<typeof setInterval>
 
+    async fetch(input: Parameters<typeof fetch>[0], options?: Parameters<typeof fetch>[1]) {
+      return fetch(input, {
+        ...options,
+        headers: {
+          ...options?.headers,
+          Cookie: parseCookie({ arl: this.options.arl }),
+          'User-Agent': "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:120.0) Gecko/20100101 Firefox/120.0",
+          'DNT': '1',
+          "Origin": "https://www.deezer.com",
+          'Connection': 'keep-alive',
+          'Referer': 'https://www.deezer.com/login'
+        }
+      })
+    }
+
     async activate(): Promise<void> {
         this.protocols = ["deezer"]
         if(!this.options.decryptionKey) process.emitWarning(Warnings.MissingDecryption)
         else {
-            this.userInfo = await fetchDeezerAnonUser()
+            this.userInfo = await fetchDeezerUser(this.options.arl, this)
 
             this.context.player.debug('USER INFO EXT: ' + JSON.stringify(this.userInfo))
         }
@@ -77,12 +104,12 @@ export class DeezerExtractor extends BaseExtractor<DeezerExtractorOptions> {
 
         this.__interval = setInterval(async () => {
           try {
-            this.userInfo = await fetchDeezerAnonUser()
+            this.userInfo = await fetchDeezerUser(this.options.arl, this)
           } catch {
             this.context.player.debug("[DEEZER_EXTRACTOR_ERR]: Unable to fetch user information from Deezer. Retrying in 3 seconds ...")
             await setTimeout(3000/* 3 seconds */)
             try {
-              this.userInfo = await fetchDeezerAnonUser()
+              this.userInfo = await fetchDeezerUser(this.options.arl, this)
             } catch (err) {
               this.context.player.debug("[DEEZER_EXTRACTOR_ERR]: Retry failed. Using old user ...")
             }
@@ -127,7 +154,7 @@ export class DeezerExtractor extends BaseExtractor<DeezerExtractorOptions> {
         }
 
         if (deezerRegex.share.test(query)) {
-            const redirect = await fetch(query);
+            const redirect = await this.fetch(query);
             query = redirect.url; // follow the redirect of deezer page links
         }
         const metadata = await getData(query)

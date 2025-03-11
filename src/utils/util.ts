@@ -2,6 +2,7 @@ import { type Player, Track, Util } from "discord-player";
 import type { DeezerExtractor } from "../DeezerExtractor";
 import { Readable, PassThrough } from 'stream'
 import Blowfish from "blowfish-node";
+import { JSDecryptor } from "../Crypto/JSDecryptor";
 
 const IV = Buffer.from(Array.from({ length: 8 }, (_, x) => x))
 
@@ -110,11 +111,13 @@ export async function streamTrack(track: Track, ext: DeezerExtractor) {
     const trackHash = crypto.createHash("md5").update(trackId, "ascii").digest("hex")
     const trackKey = Buffer.alloc(16)
 
+    const Decryptor = ext.options.decryptor || JSDecryptor
+
     for (let iter = 0; iter < 16; iter++)
         /* tslint:disable-next-line no-bitwise */
         trackKey.writeInt8(trackHash[iter].charCodeAt(0) ^ trackHash[iter + 16].charCodeAt(0) ^ decryptionKey[iter].charCodeAt(0), iter)
 
-    const trackInfoRes = await fetch(`https://www.deezer.com/ajax/gw-light.php?method=song.getListData&input=3&api_version=1.0&api_token=${ext.userInfo.csrfToken}`, {
+    const trackInfoRes = await ext.fetch(`https://www.deezer.com/ajax/gw-light.php?method=song.getListData&input=3&api_version=1.0&api_token=${ext.userInfo.csrfToken}`, {
         method: "POST",
         headers: {
             Cookie: ext.userInfo.cookie,
@@ -157,19 +160,19 @@ export async function streamTrack(track: Track, ext: DeezerExtractor) {
 
     ext.context.player.debug("DEEZER FOUND MEDIA URL " + trackMediaUrl)
 
-    const trackReq = await fetch(trackMediaUrl)
+    const trackReq = await ext.fetch(trackMediaUrl)
     // @ts-ignore
     const readable = Readable.fromWeb(trackReq.body)
     let buffer = Buffer.alloc(0)
     let i = 0
 
     const bufferSize = 2048 // 2mb
-    const blowfishDecrypter = new Blowfish(new Uint8Array(trackKey), Blowfish.MODE.CBC, Blowfish.PADDING.NULL)
-    blowfishDecrypter.setIv(new Uint8Array(IV))
 
     const passThrough = new PassThrough()
 
-    readable.on("readable", () => {
+    const decryptor = new Decryptor(trackKey, IV)
+
+    readable.on("readable", async () => {
         let chunk = null;
         while (true) {
             chunk = readable.read(bufferSize)
@@ -188,7 +191,7 @@ export async function streamTrack(track: Track, ext: DeezerExtractor) {
                 const bufferSized = buffer.subarray(0, bufferSize)
 
                 if (i % 3 === 0) {
-                    const decipher = Buffer.from(blowfishDecrypter.decode(new Uint8Array(bufferSized), Blowfish.TYPE.UINT8_ARRAY))
+                    const decipher = await decryptor.decrypt(bufferSized)
                     passThrough.write(decipher)
                 } else {
                     passThrough.write(bufferSized)
