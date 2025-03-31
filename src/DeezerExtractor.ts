@@ -1,6 +1,7 @@
 import {
   Playlist as DeezerPlaylist,
   Track as DeezerTrack,
+  getData,
 } from "@mithron/deezer-music-metadata";
 import {
   BaseExtractor,
@@ -46,6 +47,7 @@ export type DeezerExtractorOptions = {
   arl: string;
   decryptor?: typeof BaseDecryptor;
 };
+
 export type DeezerUserInfo = {
   cookie: string;
   licenseToken: string;
@@ -209,161 +211,17 @@ export class DeezerExtractor extends BaseExtractor<DeezerExtractorOptions> {
       const redirect = await this.fetch(query);
       query = redirect.url; // follow the redirect of deezer page links
     }
+    const metadata = await getData(query);
 
-    const metadata = await this.fetch(query);
-    const text = await metadata.text();
-    const match = text.match(
-      /<script>window.__DZR_APP_STATE__ = (.*?)<\/script>/
-    );
-    if (!match) throw new Error("Unable to retrieve Deezer data");
+    if (metadata?.type === "song")
+      return this.createResponse(null, [this.buildTrack(metadata, context)]);
+    if (metadata?.type === "playlist" || metadata?.type === "album") {
+      const playlist = this.buildPlaylistData(metadata, context);
 
-    const metadataParsed = JSON.parse(match[1]);
-    if (!metadataParsed) throw new Error("Invalid Deezer data");
-
-    return metadataParsed?.SONGS?.data?.length > 0
-      ? this.handlePlaylist(metadataParsed, context)
-      : this.handleTrack(metadataParsed, context);
-  }
-
-  private handlePlaylist(
-    metadataParsed: any,
-    context: ExtractorSearchContext
-  ): ExtractorInfo {
-    if (metadataParsed?.DATA?.__TYPE__ === "album") {
-      const albumData: DeezerPlaylist = {
-        name: metadataParsed?.DATA?.ALB_TITLE,
-        url: `https://www.deezer.com/album/${metadataParsed?.DATA?.ALB_ID}`,
-        description: metadataParsed?.DATA?.PRODUCER_LINE || "",
-        type: "album",
-        artist: {
-          name: metadataParsed?.DATA?.ART_NAME,
-          url: `https://www.deezer.com/artist/${metadataParsed?.DATA?.ART_ID}`,
-          image: metadataParsed?.DATA?.ALB_PICTURE
-            ? `https://e-cdns-images.dzcdn.net/images/cover/${metadataParsed?.DATA?.ALB_PICTURE}/1000x1000-000000-80-0-0.jpg`
-            : undefined,
-        },
-        thumbnail: metadataParsed?.DATA?.ALB_PICTURE
-          ? [
-              {
-                width: 1000,
-                height: 1000,
-                url: `https://e-cdns-images.dzcdn.net/images/cover/${metadataParsed?.DATA?.ALB_PICTURE}/1000x1000-000000-80-0-0.jpg`,
-              },
-              {
-                width: 500,
-                height: 500,
-                url: `https://e-cdns-images.dzcdn.net/images/cover/${metadataParsed?.DATA?.ALB_PICTURE}/500x500-000000-80-0-0.jpg`,
-              },
-              {
-                width: 250,
-                height: 250,
-                url: `https://e-cdns-images.dzcdn.net/images/cover/${metadataParsed?.DATA?.ALB_PICTURE}/250x250-000000-80-0-0.jpg`,
-              },
-              {
-                width: 56,
-                height: 56,
-                url: `https://e-cdns-images.dzcdn.net/images/cover/${metadataParsed?.DATA?.ALB_PICTURE}/56x56-000000-80-0-0.jpg`,
-              },
-            ]
-          : [],
-        tracks: metadataParsed?.SONGS?.data?.map((song: any) => ({
-          name: song.SNG_TITLE,
-          url: `https://www.deezer.com/track/${song.SNG_ID}`,
-          duration: parseInt(song.DURATION, 10),
-          type: "song",
-          author: [
-            {
-              name: song.ART_NAME,
-              url: `https://www.deezer.com/artist/${song.ART_ID}`,
-              image: song.ART_PICTURE
-                ? `https://e-cdns-images.dzcdn.net/images/artist/${song.ART_PICTURE}/500x500-000000-80-0-0.jpg`
-                : undefined,
-            },
-          ],
-          thumbnail: song.ALB_PICTURE
-            ? [
-                {
-                  width: 1000,
-                  height: 1000,
-                  url: `https://e-cdns-images.dzcdn.net/images/cover/${song.ALB_PICTURE}/1000x1000-000000-80-0-0.jpg`,
-                },
-                {
-                  width: 500,
-                  height: 500,
-                  url: `https://e-cdns-images.dzcdn.net/images/cover/${song.ALB_PICTURE}/500x500-000000-80-0-0.jpg`,
-                },
-                {
-                  width: 250,
-                  height: 250,
-                  url: `https://e-cdns-images.dzcdn.net/images/cover/${song.ALB_PICTURE}/250x250-000000-80-0-0.jpg`,
-                },
-                {
-                  width: 56,
-                  height: 56,
-                  url: `https://e-cdns-images.dzcdn.net/images/cover/${song.ALB_PICTURE}/56x56-000000-80-0-0.jpg`,
-                },
-              ]
-            : [],
-        })),
-      };
-
-      const album = this.buildPlaylistData(albumData, context);
-      return this.createResponse(album, album.tracks);
+      return this.createResponse(playlist, playlist.tracks);
     }
-    const playlistData: DeezerPlaylist = {
-      name: metadataParsed.DATA.TITLE,
-      url: `https://www.deezer.com/playlist/${metadataParsed.DATA.PLAYLIST_ID}`,
-      description: metadataParsed.DATA.DESCRIPTION || "",
-      type: "playlist",
-      artist: {
-        name: metadataParsed.DATA.PARENT_USERNAME,
-        url: `https://www.deezer.com/profile/${metadataParsed.DATA.PARENT_USER_ID}`,
-        image: metadataParsed.DATA.PARENT_USER_PICTURE || undefined,
-      },
-      thumbnail: this.buildThumbnails(metadataParsed.DATA.PLAYLIST_PICTURE),
-      tracks: metadataParsed.SONGS.data.map((song: any) =>
-        this.buildTrackData(song)
-      ),
-    };
 
-    const playlist = this.buildPlaylistData(playlistData, context);
-    return this.createResponse(playlist, playlist.tracks);
-  }
-
-  private handleTrack(
-    metadataParsed: any,
-    context: ExtractorSearchContext
-  ): ExtractorInfo {
-    const trackData: DeezerTrack = this.buildTrackData(metadataParsed.DATA);
-    return this.createResponse(null, [this.buildTrack(trackData, context)]);
-  }
-
-  private buildTrackData(song: any): DeezerTrack {
-    return {
-      name: song.SNG_TITLE,
-      url: `https://www.deezer.com/track/${song.SNG_ID}`,
-      duration: parseInt(song.DURATION, 10),
-      type: "song",
-      author: [
-        {
-          name: song.ART_NAME,
-          url: `https://www.deezer.com/artist/${song.ART_ID}`,
-          image: song.ART_PICTURE
-            ? `https://e-cdns-images.dzcdn.net/images/artist/${song.ART_PICTURE}/500x500-000000-80-0-0.jpg`
-            : undefined,
-        },
-      ],
-      thumbnail: this.buildThumbnails(song.ALB_PICTURE),
-    };
-  }
-
-  private buildThumbnails(imageId?: string) {
-    if (!imageId) return [];
-    return [1000, 500, 250, 56].map((size) => ({
-      width: size,
-      height: size,
-      url: `https://e-cdns-images.dzcdn.net/images/cover/${imageId}/${size}x${size}-000000-80-0-0.jpg`,
-    }));
+    throw new Error("Unable to get data from Deezer");
   }
 
   buildTrack(track: DeezerTrack, { requestedBy }: ExtractorSearchContext) {
