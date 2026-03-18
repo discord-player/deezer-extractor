@@ -231,7 +231,7 @@ export class DeezerExtractor extends BaseExtractor<DeezerExtractorOptions> {
       url: track.url,
       source: "arbitrary",
       thumbnail: track.thumbnail[0].url,
-      duration: DPUtil.buildTimeCode(DPUtil.parseMS(track.duration)),
+      duration: DPUtil.buildTimeCode(DPUtil.parseMS(track.duration * 1000)),
       requestedBy,
     });
   }
