@@ -140,9 +140,10 @@ export async function streamTrack(track: Track, ext: DeezerExtractor) {
   const Decryptor = ext.options.decryptor || JSDecryptor;
 
   for (let iter = 0; iter < 16; iter++)
-    /* tslint:disable-next-line no-bitwise */
     trackKey.writeInt8(
+      /* tslint:disable-next-line no-bitwise */
       trackHash[iter].charCodeAt(0) ^
+        /* tslint:disable-next-line no-bitwise */
         trackHash[iter + 16].charCodeAt(0) ^
         decryptionKey[iter].charCodeAt(0),
       iter
