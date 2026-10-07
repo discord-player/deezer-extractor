@@ -253,14 +253,14 @@ export async function streamTrack(track: Track, ext: DeezerExtractor) {
 export const deezerRegex = {
   track: /(^https:)\/\/(www\.)?deezer.com\/([a-zA-Z]+\/)?track\/[0-9]+/,
   playlistNalbums:
-    /(^https:)\/\/(www\.)?deezer.com\/[a-zA-Z]+\/(playlist|album)\/[0-9]+(\?)?(.*)/,
-  share: /(^https:)\/\/dzr\.page\.link\/[A-Za-z0-9]+/,
+    /(^https:)\/\/(www\.)?deezer.com\/([a-zA-Z]+\/)?(playlist|album)\/[0-9]+(\?)?(.*)/,
+  share: /(^https:)\/\/(dzr\.page\.link|link\.deezer\.com\/s)\/[A-Za-z0-9]+/,
 } as const;
 
 export function validate(query: string) {
   return (
-    deezerRegex.track.test(query) ??
-    deezerRegex.playlistNalbums.test(query) ??
+    deezerRegex.track.test(query) ||
+    deezerRegex.playlistNalbums.test(query) ||
     deezerRegex.share.test(query)
   );
 }
