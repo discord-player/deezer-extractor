@@ -1,20 +1,14 @@
 import { type Player, Track, Util } from "discord-player";
-import { PassThrough, Readable } from "stream";
+import { Readable } from "stream";
+import { CacheTapStream } from "../Cache/CacheTapStream";
 import { JSDecryptor } from "../Crypto/JSDecryptor";
+import { StripeDecryptStream } from "../Crypto/StripeDecryptStream";
 import type { DeezerExtractor } from "../DeezerExtractor";
+import { getCrypto } from "./crypto";
+
+export { getCrypto } from "./crypto";
 
 const IV = Buffer.from(Array.from({ length: 8 }, (_, x) => x));
-
-let rawCrypto: typeof import("crypto");
-
-export async function getCrypto() {
-  if (!rawCrypto) {
-    rawCrypto = await import("crypto");
-    return rawCrypto;
-  }
-
-  return rawCrypto;
-}
 
 export function isUrl(query: string) {
   try {
@@ -125,11 +119,26 @@ export async function searchOneTrack(query: string) {
 }
 
 export async function streamTrack(track: Track, ext: DeezerExtractor) {
+  const cache = ext.options.cache;
+  const trackId = extractTrackId(track.url);
+
+  if (cache) {
+    try {
+      const cached = await cache.read(trackId);
+
+      if (cached) {
+        ext.context.player.debug(`DEEZER CACHE HIT ${trackId}`);
+        return cached;
+      }
+    } catch (error) {
+      ext.context.player.debug(`DEEZER CACHE READ ERROR ${String(error)}`);
+    }
+  }
+
   const decryptionKey = ext.options.decryptionKey;
   if (!decryptionKey) throw new Error("MISSING DEEZER DECRYPTION KEY"); // cant decrypt due to missing key
 
   const crypto = await getCrypto();
-  const trackId = extractTrackId(track.url);
 
   const trackHash = crypto
     .createHash("md5")
@@ -206,48 +215,47 @@ export async function streamTrack(track: Track, ext: DeezerExtractor) {
   const trackReq = await ext.fetch(trackMediaUrl);
   // @ts-ignore
   const readable = Readable.fromWeb(trackReq.body);
-  let buffer = Buffer.alloc(0);
-  let i = 0;
-
-  const bufferSize = 2048; // 2mb
-
-  const passThrough = new PassThrough();
 
   const decryptor = new Decryptor(trackKey, IV);
+  const stream = new StripeDecryptStream(decryptor);
 
-  readable.on("readable", async () => {
-    let chunk = null;
-    while (true) {
-      chunk = readable.read(bufferSize);
+  // Piping (instead of draining in a "readable" listener) applies
+  // backpressure: the body is only pulled as the player consumes it, so a
+  // slow consumer won't cause the whole track to be downloaded into memory.
+  readable.on("error", (error) => stream.destroy(error));
+  readable.pipe(stream);
 
-      if (!chunk) {
-        if (readable.readableLength) {
-          chunk = readable.read(readable.readableLength);
-          buffer = Buffer.concat([buffer, chunk]);
-        }
-        break;
-      } else {
-        buffer = Buffer.concat([buffer, chunk]);
-      }
-
-      while (buffer.length >= bufferSize) {
-        const bufferSized = buffer.subarray(0, bufferSize);
-
-        if (i % 3 === 0) {
-          const decipher = await decryptor.decrypt(bufferSized);
-          passThrough.write(decipher);
-        } else {
-          passThrough.write(bufferSized);
-        }
-
-        i++;
-
-        buffer = buffer.subarray(bufferSize);
-      }
-    }
+  // Release the HTTP body if the consumer aborts before the track ends.
+  stream.once("close", () => {
+    if (!stream.readableEnded && !readable.destroyed) readable.destroy();
   });
 
-  return passThrough;
+  if (!cache) return stream;
+
+  try {
+    const sink = await cache.write(trackId);
+
+    sink.on("error", (error) => {
+      ext.context.player.debug(`DEEZER CACHE WRITE ERROR ${String(error)}`);
+    });
+
+    const output = new CacheTapStream(sink);
+    stream.on("error", (error) => output.destroy(error));
+
+    // On abort, discard the partial cache entry and tear down the pipeline.
+    output.once("close", () => {
+      if (output.readableEnded) return;
+      if (!stream.destroyed) stream.destroy();
+      if (!readable.destroyed) readable.destroy();
+    });
+
+    stream.pipe(output);
+
+    return output;
+  } catch (error) {
+    ext.context.player.debug(`DEEZER CACHE WRITE ERROR ${String(error)}`);
+    return stream;
+  }
 }
 
 export const deezerRegex = {

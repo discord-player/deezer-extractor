@@ -14,6 +14,7 @@ import {
   Track,
 } from "discord-player";
 import { setTimeout } from "node:timers/promises";
+import type { IAudioCache } from "./Cache";
 import { BaseDecryptor } from "./Crypto/BaseDecryptor";
 import {
   buildTrackFromSearch,
@@ -46,6 +47,8 @@ export type DeezerExtractorOptions = {
   priority?: number;
   arl: string;
   decryptor?: typeof BaseDecryptor;
+  /** Opt-in cache for decrypted audio. */
+  cache?: IAudioCache;
 };
 
 export type DeezerUserInfo = {
@@ -161,6 +164,7 @@ export class DeezerExtractor extends BaseExtractor<DeezerExtractorOptions> {
   async deactivate() {
     if (this.__interval) clearInterval(this.__interval);
     this.protocols = [];
+    await this.options.cache?.close?.();
   }
 
   async validate(
